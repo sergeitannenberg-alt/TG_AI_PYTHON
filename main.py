@@ -32,7 +32,7 @@ USER_BUTTONS = {
         "prompt": "Расскажи один интересный научный факт",
         "mode": "single",
         "max_tokens": 200,
-        "temperature": 0.5
+        "temperature": 0.4
     },
 }
 def menu_kb():
