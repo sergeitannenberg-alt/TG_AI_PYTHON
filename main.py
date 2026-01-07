@@ -8,6 +8,7 @@ from openai import OpenAI
 from aiogram.fsm.state import State,StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import FSInputFile
 import config
 
 
@@ -107,6 +108,13 @@ def persons_kb():
     kb.adjust(1)
     return kb.as_markup()
 
+def fact_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="Ещё факт", callback_data="fact_more")
+    kb.button(text="Назад", callback_data="back_button")
+    kb.adjust(1)
+    return kb.as_markup()
+
 def ai_requests(config:dict, user_id:int, user_text:str | None= None) -> str:
     if user_id not in USER_MEMORY:
         USER_MEMORY[user_id] = [
@@ -167,14 +175,25 @@ async def menu_handler(call:CallbackQuery,state:FSMContext):
         await call.answer("Сначала выйди из текущего чата, нажми 'Назад'", show_alert=True)
         return
 
+    if config["mode"] == "single":
+        await state.set_state(IN_CHAT.in_chat)
+        await state.update_data(active_config=config)
+
+        text = ai_requests(config, call.from_user.id)
+
+        await call.message.edit_text(text, reply_markup=fact_kb())
+        return
+
     if config["mode"] == "chat":
         await state.set_state(IN_CHAT.in_chat)
         await state.update_data(active_config= config)
         USER_MEMORY[call.from_user.id]= [
             {"role": "system", "content": config["system"]}
         ]
-        await call.message.edit_text(
-            "привет, о чём поболтаем",
+        photo = FSInputFile("images/menu.jpg")
+        await call.message.answer_photo(
+            photo=photo,
+            caption="привет, о чём поболтаем",
             reply_markup=back_button()
         )
         return
@@ -205,6 +224,27 @@ async def person_handler(call:CallbackQuery,state:FSMContext):
         text=f"Ты общаешься с {config_person['text']}",
         reply_markup=back_button()
     )
+@dp.callback_query(F.data == "fact_more")
+async def more_fact(call: CallbackQuery, state: FSMContext):
+
+
+    data = await state.get_data()
+    config = data.get("active_config")
+
+    if not config or config["mode"] != "single":
+        await call.message.edit_text(
+            "Возвращаемся в меню",
+            reply_markup=menu_kb()
+        )
+        await state.clear()
+        return
+
+    text = ai_requests(config, call.from_user.id)
+
+    await call.message.edit_text(
+        text,
+        reply_markup=fact_kb()
+    )
 
 @dp.callback_query(F.data == "back_button")
 async def back_henbler(call:CallbackQuery,state:FSMContext):
@@ -226,6 +266,13 @@ async def chat_handler(message: Message, state: FSMContext):
         await message.answer("Ошибка конфигурации. Возвращаемся в меню.", reply_markup=menu_kb())
         await state.clear()
         USER_MEMORY.pop(user_id, None)
+        return
+
+    if config["mode"] == "single":
+        await message.answer(
+            "Для фактов используй кнопки 👇",
+            reply_markup=fact_kb()
+        )
         return
 
     answer = ai_requests(config, user_id, message.text)
